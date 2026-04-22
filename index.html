@@ -192,6 +192,13 @@
     </div>
     <div class="grid" id="destGrid"></div>
     <details id="destList"><summary>Show destinations per prefix</summary><div id="destListBody"></div></details>
+    <details id="colPicker" style="margin-top:8px"><summary>Columns to include in CSV (<span id="colCount">all</span>)</summary>
+      <div style="display:flex; gap:8px; margin:10px 0">
+        <button class="secondary" id="colAll" type="button">All</button>
+        <button class="secondary" id="colNone" type="button">None</button>
+      </div>
+      <div id="colList" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:6px"></div>
+    </details>
     <hr/>
     <div class="row">
       <div style="flex:1;min-width:220px">
@@ -459,10 +466,41 @@ $('loadDestinations').addEventListener('click', () => {
     body.appendChild(div);
   });
 
+  renderColumnPicker();
+
   $('destPanel').style.display = 'block';
   $('destTitle').textContent = `Prefix groups (${prefixes.length} found)`;
   updateSelCount();
   grid.addEventListener('change', updateSelCount);
+});
+
+function renderColumnPicker() {
+  const list = document.getElementById('colList');
+  list.innerHTML = '';
+  currentHeaders.forEach(h => {
+    const label = document.createElement('label');
+    label.className = 'chip';
+    label.innerHTML = `<input type="checkbox" value="${h.replace(/"/g,'&quot;')}" checked/> <span>${h}</span>`;
+    list.appendChild(label);
+  });
+  list.addEventListener('change', updateColCount);
+  updateColCount();
+}
+function getSelectedColumns() {
+  return Array.from(document.querySelectorAll('#colList input[type=checkbox]:checked')).map(c => c.value);
+}
+function updateColCount() {
+  const n = getSelectedColumns().length;
+  const t = currentHeaders.length;
+  document.getElementById('colCount').textContent = n === t ? 'all' : `${n} of ${t}`;
+}
+document.getElementById('colAll').addEventListener('click', () => {
+  document.querySelectorAll('#colList input[type=checkbox]').forEach(c => c.checked = true);
+  updateColCount();
+});
+document.getElementById('colNone').addEventListener('click', () => {
+  document.querySelectorAll('#colList input[type=checkbox]').forEach(c => c.checked = false);
+  updateColCount();
 });
 
 function getCheckedPrefixes() {
@@ -528,6 +566,8 @@ $('generate').addEventListener('click', async () => {
   const dateCol = $('dateCol').value;
   const durCol  = $('durCol').value;
   const minDur  = parseInt($('minDur').value || '10', 10);
+  const outputHeaders = getSelectedColumns();
+  if (!outputHeaders.length) { alert('Select at least one column to include.'); return; }
   $('log').innerHTML = '';
   log(`Generating ${selected.length} prefix zip(s) (min duration ${minDur}s)...`);
 
@@ -548,7 +588,7 @@ $('generate').addEventListener('click', async () => {
 
       // All
       const nameAll = sanitizeFilename(`${rows.length}_${dest}_${dateStr}`) + '.csv';
-      allInner.file(nameAll, rowsToCsv(rows, currentHeaders));
+      allInner.file(nameAll, rowsToCsv(rows, outputHeaders));
       totalAll += rows.length;
 
       // Filtered
