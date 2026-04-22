@@ -6,6 +6,7 @@
 <title>Excel Destination Splitter</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root { --bg:#0f172a; --panel:#1e293b; --accent:#3b82f6; --text:#e2e8f0; --muted:#94a3b8; --border:#334155; --ok:#10b981; }
   * { box-sizing: border-box; }
@@ -35,10 +36,31 @@
   .err { color: #f87171; }
   details { background:#0b1220; border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-top:8px; }
   details summary { cursor:pointer; font-size:13px; color: var(--muted); }
+  .auth-wrap { max-width: 380px; margin: 80px auto; }
+  .auth-wrap input { width:100%; margin-bottom:10px; }
+  .auth-err { color:#f87171; font-size:13px; margin-top:6px; min-height:18px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:13px; color:var(--muted); }
+  .topbar button { background:#475569; padding:6px 12px; font-size:12px; }
 </style>
 </head>
 <body>
-<div class="container">
+
+<div id="authScreen" class="auth-wrap panel" style="display:none">
+  <h1 style="margin:0 0 8px">Sign in</h1>
+  <div class="sub">Access restricted. Use the credentials provided to you.</div>
+  <label>Email</label>
+  <input type="email" id="authEmail" autocomplete="username"/>
+  <label>Password</label>
+  <input type="password" id="authPassword" autocomplete="current-password"/>
+  <button id="authSignIn" style="width:100%">Sign in</button>
+  <div class="auth-err" id="authErr"></div>
+</div>
+
+<div id="appScreen" class="container" style="display:none">
+  <div class="topbar">
+    <div>Signed in as <span id="userEmail" style="color:var(--text)"></span></div>
+    <button id="signOutBtn">Sign out</button>
+  </div>
   <h1>Excel Destination Splitter</h1>
   <div class="sub">Upload → group by prefix (AM, G, UK, …) → get a zip with per-prefix zips, each containing an "all" and a "≥ Ns" CSV set.</div>
 
@@ -101,6 +123,40 @@
 </div>
 
 <script>
+const SUPABASE_URL = 'https://gowalptcpriqsbudxmls.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zpntTu1S30W1M8KYPi9T3w_8NZ_q08G';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+async function renderAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
+    document.getElementById('userEmail').textContent = session.user.email || '';
+  } else {
+    document.getElementById('authScreen').style.display = 'block';
+    document.getElementById('appScreen').style.display = 'none';
+  }
+}
+document.addEventListener('DOMContentLoaded', renderAuth);
+sb.auth.onAuthStateChange(() => renderAuth());
+
+document.getElementById('authSignIn').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authErr');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Enter email and password.'; return; }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) errEl.textContent = error.message;
+});
+document.getElementById('authPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('authSignIn').click();
+});
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+});
+
 let workbook = null;
 let currentRows = [];
 let currentHeaders = [];
