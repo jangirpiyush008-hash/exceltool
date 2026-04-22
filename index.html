@@ -72,6 +72,9 @@
   .logo { position:relative; }
   .logo::after { content:""; position:absolute; inset:-2px; border-radius:13px; background: linear-gradient(135deg, var(--accent), var(--accent2)); filter:blur(10px); opacity:0.4; z-index:-1; }
   .brand { position:relative; }
+  .greeting { font-size:18px; margin:10px 0 4px; color:var(--text); font-weight:600; }
+  .greeting .wave { display:inline-block; animation: wave 1.6s ease-in-out infinite; transform-origin: 70% 70%; }
+  @keyframes wave { 0%,60%,100% {transform:rotate(0)} 15% {transform:rotate(14deg)} 30% {transform:rotate(-8deg)} 45% {transform:rotate(10deg)} }
 </style>
 </head>
 <body>
@@ -108,6 +111,7 @@
       <div class="tag">Excel destination splitter</div>
     </div>
   </div>
+  <div id="greeting" class="greeting" style="display:none"></div>
   <div class="sub">Upload → group by prefix (AM, G, UK, …) → get a zip with per-prefix zips, each containing an "all" and a "≥ Ns" CSV set.</div>
 
   <div class="stats-row" id="statsRow">
@@ -207,6 +211,16 @@ const SUPABASE_URL = 'https://gowalptcpriqsbudxmls.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zpntTu1S30W1M8KYPi9T3w_8NZ_q08G';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+function renderGreeting(user) {
+  const g = document.getElementById('greeting');
+  const name = user.user_metadata && user.user_metadata.display_name;
+  if (name) {
+    g.innerHTML = `<span class="wave">👋</span> Hi, <span style="background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">${name.replace(/</g,'&lt;')}</span>`;
+    g.style.display = 'block';
+  } else {
+    g.style.display = 'none';
+  }
+}
 async function renderAuth() {
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
@@ -214,6 +228,7 @@ async function renderAuth() {
     document.getElementById('appScreen').style.display = 'block';
     const name = session.user.user_metadata && session.user.user_metadata.display_name;
     document.getElementById('userEmail').textContent = name ? `${name} (${session.user.email})` : (session.user.email || '');
+    renderGreeting(session.user);
     loadStats();
   } else {
     document.getElementById('authScreen').style.display = 'block';
@@ -310,6 +325,7 @@ async function loadProfile() {
   const greet = document.getElementById('userEmail');
   const name = user.user_metadata && user.user_metadata.display_name;
   if (greet) greet.textContent = name ? `${name} (${user.email})` : user.email;
+  renderGreeting(user);
 }
 
 document.getElementById('profileBtn').addEventListener('click', () => {
