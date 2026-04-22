@@ -59,6 +59,19 @@
   .auth-brand .logo svg { width:32px; height:32px; }
   .auth-brand h1 { font-size: 24px; }
   input:focus, select:focus { outline:none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+  .stats-row { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin: 16px 0 8px; }
+  .stat { background: linear-gradient(180deg, rgba(30,41,59,0.75), rgba(15,23,42,0.75)); border:1px solid var(--border); border-radius:12px; padding:14px 16px; position:relative; overflow:hidden; }
+  .stat::before { content:""; position:absolute; inset:0; background: linear-gradient(135deg, rgba(59,130,246,0.1), transparent 60%); pointer-events:none; }
+  .stat-label { font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); }
+  .stat-value { font-size:22px; font-weight:700; margin-top:4px; color:var(--text); letter-spacing:-0.01em; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index:50; padding:40px 20px; overflow-y:auto; animation:fadeIn .15s ease; }
+  .modal-card { max-width:440px; margin:0 auto; animation:slideUp .2s ease; }
+  .modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  @keyframes fadeIn { from {opacity:0} to {opacity:1} }
+  @keyframes slideUp { from {opacity:0; transform:translateY(8px)} to {opacity:1; transform:none} }
+  .logo { position:relative; }
+  .logo::after { content:""; position:absolute; inset:-2px; border-radius:13px; background: linear-gradient(135deg, var(--accent), var(--accent2)); filter:blur(10px); opacity:0.4; z-index:-1; }
+  .brand { position:relative; }
 </style>
 </head>
 <body>
@@ -83,6 +96,7 @@
   <div class="topbar">
     <div>Signed in as <span id="userEmail" style="color:var(--text)"></span></div>
     <div style="display:flex; gap:8px">
+      <button id="profileBtn">Profile</button>
       <button id="historyBtn">History</button>
       <button id="signOutBtn">Sign out</button>
     </div>
@@ -96,12 +110,36 @@
   </div>
   <div class="sub">Upload → group by prefix (AM, G, UK, …) → get a zip with per-prefix zips, each containing an "all" and a "≥ Ns" CSV set.</div>
 
-  <div id="historyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:50; padding:40px 20px; overflow-y:auto">
-    <div class="panel" style="max-width:760px; margin:0 auto">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
-        <strong style="font-size:18px">History</strong>
-        <button class="secondary" id="historyClose">Close</button>
-      </div>
+  <div class="stats-row" id="statsRow">
+    <div class="stat"><div class="stat-label">Total runs</div><div class="stat-value" id="statRuns">—</div></div>
+    <div class="stat"><div class="stat-label">Files processed</div><div class="stat-value" id="statFiles">—</div></div>
+    <div class="stat"><div class="stat-label">Rows split</div><div class="stat-value" id="statRows">—</div></div>
+    <div class="stat"><div class="stat-label">Last run</div><div class="stat-value" id="statLast">—</div></div>
+  </div>
+
+  <div id="profileModal" class="modal-bg" style="display:none">
+    <div class="panel modal-card">
+      <div class="modal-head"><strong style="font-size:18px">Profile</strong><button class="secondary" id="profileClose">Close</button></div>
+      <label>Email</label>
+      <input type="text" id="pfEmail" disabled style="width:100%; opacity:.7"/>
+      <label style="margin-top:10px">Display name</label>
+      <input type="text" id="pfName" placeholder="Your name" style="width:100%"/>
+      <button id="pfSaveName" style="margin-top:10px">Save name</button>
+      <hr/>
+      <label>New password</label>
+      <input type="password" id="pfPwd" placeholder="At least 6 characters" style="width:100%"/>
+      <button id="pfSavePwd" style="margin-top:10px">Update password</button>
+      <hr/>
+      <label>Forgot password?</label>
+      <div class="sub" style="margin:0 0 8px">Send a reset link to your email.</div>
+      <button class="secondary" id="pfReset">Send reset email</button>
+      <div id="pfMsg" class="auth-err" style="color:var(--ok)"></div>
+    </div>
+  </div>
+
+  <div id="historyModal" class="modal-bg" style="display:none">
+    <div class="panel modal-card" style="max-width:760px">
+      <div class="modal-head"><strong style="font-size:18px">History</strong><button class="secondary" id="historyClose">Close</button></div>
       <div id="historyBody" style="font-size:13px; color:var(--muted)">Loading…</div>
     </div>
   </div>
@@ -174,7 +212,9 @@ async function renderAuth() {
   if (session) {
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('appScreen').style.display = 'block';
-    document.getElementById('userEmail').textContent = session.user.email || '';
+    const name = session.user.user_metadata && session.user.user_metadata.display_name;
+    document.getElementById('userEmail').textContent = name ? `${name} (${session.user.email})` : (session.user.email || '');
+    loadStats();
   } else {
     document.getElementById('authScreen').style.display = 'block';
     document.getElementById('appScreen').style.display = 'none';
@@ -245,6 +285,65 @@ document.getElementById('historyBtn').addEventListener('click', () => {
 });
 document.getElementById('historyClose').addEventListener('click', () => {
   document.getElementById('historyModal').style.display = 'none';
+});
+
+async function loadStats() {
+  try {
+    const { data, error } = await sb.from('generations').select('total_rows, file_name, created_at').order('created_at', { ascending: false });
+    if (error) return;
+    const runs = data.length;
+    const files = new Set(data.map(d => d.file_name).filter(Boolean)).size;
+    const rows = data.reduce((s, d) => s + (d.total_rows || 0), 0);
+    const last = data[0] ? new Date(data[0].created_at) : null;
+    document.getElementById('statRuns').textContent = runs;
+    document.getElementById('statFiles').textContent = files;
+    document.getElementById('statRows').textContent = rows.toLocaleString();
+    document.getElementById('statLast').textContent = last ? last.toLocaleDateString() : '—';
+  } catch (e) {}
+}
+
+async function loadProfile() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  document.getElementById('pfEmail').value = user.email || '';
+  document.getElementById('pfName').value = (user.user_metadata && user.user_metadata.display_name) || '';
+  const greet = document.getElementById('userEmail');
+  const name = user.user_metadata && user.user_metadata.display_name;
+  if (greet) greet.textContent = name ? `${name} (${user.email})` : user.email;
+}
+
+document.getElementById('profileBtn').addEventListener('click', () => {
+  document.getElementById('pfMsg').textContent = '';
+  document.getElementById('profileModal').style.display = 'block';
+  loadProfile();
+});
+document.getElementById('profileClose').addEventListener('click', () => {
+  document.getElementById('profileModal').style.display = 'none';
+});
+document.getElementById('pfSaveName').addEventListener('click', async () => {
+  const name = document.getElementById('pfName').value.trim();
+  const msg = document.getElementById('pfMsg');
+  const { error } = await sb.auth.updateUser({ data: { display_name: name } });
+  msg.style.color = error ? '#f87171' : 'var(--ok)';
+  msg.textContent = error ? error.message : 'Name updated.';
+  if (!error) loadProfile();
+});
+document.getElementById('pfSavePwd').addEventListener('click', async () => {
+  const pwd = document.getElementById('pfPwd').value;
+  const msg = document.getElementById('pfMsg');
+  if (!pwd || pwd.length < 6) { msg.style.color = '#f87171'; msg.textContent = 'Password must be at least 6 characters.'; return; }
+  const { error } = await sb.auth.updateUser({ password: pwd });
+  msg.style.color = error ? '#f87171' : 'var(--ok)';
+  msg.textContent = error ? error.message : 'Password updated.';
+  if (!error) document.getElementById('pfPwd').value = '';
+});
+document.getElementById('pfReset').addEventListener('click', async () => {
+  const { data: { user } } = await sb.auth.getUser();
+  const msg = document.getElementById('pfMsg');
+  if (!user) return;
+  const { error } = await sb.auth.resetPasswordForEmail(user.email, { redirectTo: window.location.origin });
+  msg.style.color = error ? '#f87171' : 'var(--ok)';
+  msg.textContent = error ? error.message : `Reset link sent to ${user.email}.`;
 });
 
 let workbook = null;
@@ -471,13 +570,14 @@ $('generate').addEventListener('click', async () => {
     details[p] = { destinations: dests.length, rows };
     totalRows += rows; totalDests += dests.length;
   }
-  recordHistory({
+  await recordHistory({
     fileName: currentFileName,
     totalRows, prefixCount: selected.length, destCount: totalDests,
     minDuration: minDur,
     outputName: $('zipName').value || 'destinations_split.zip',
     details
   });
+  loadStats();
 });
 </script>
 </body>
