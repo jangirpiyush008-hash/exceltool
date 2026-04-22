@@ -594,7 +594,7 @@ $('generate').addEventListener('click', async () => {
       const filtered = rows.filter(r => durationToSeconds(r[durCol]) >= minDur);
       if (filtered.length) {
         const nameF = sanitizeFilename(`${filtered.length}_${dest}_${dateStr}`) + '.csv';
-        filtInner.file(nameF, rowsToCsv(filtered, currentHeaders));
+        filtInner.file(nameF, rowsToCsv(filtered, outputHeaders));
         totalFilt += filtered.length;
       }
     }
